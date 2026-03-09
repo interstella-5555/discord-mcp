@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import pThrottle from "p-throttle";
 import { TTLCache } from "@isaacs/ttlcache";
 import ms from "ms";
@@ -11,10 +12,10 @@ interface RequestOptions {
   itemsCount?: number;
 }
 
-// Random delay between min and max ms
+// Cryptographically random delay between min and max ms
 function jitter(minMs: number, maxMs: number): Promise<number> {
-  const ms = minMs + Math.random() * (maxMs - minMs);
-  return new Promise((resolve) => setTimeout(() => resolve(ms), ms));
+  const delay = randomInt(minMs, maxMs + 1);
+  return new Promise((resolve) => setTimeout(() => resolve(delay), delay));
 }
 
 export class DiscordClient {
