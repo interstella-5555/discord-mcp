@@ -6,7 +6,7 @@
 
 **Architecture:** TypeScript MCP server using stdio transport. DiscordClient class handles auth, throttle queue, retry (max 2), and in-memory cache. Formatters convert Discord API responses to LLM-readable text. Logger tracks every request for later tuning.
 
-**Tech Stack:** TypeScript, `@modelcontextprotocol/sdk`, `zod`, `vitest`
+**Tech Stack:** TypeScript, `@modelcontextprotocol/sdk`, `zod`, `bun` (runtime, test runner, package manager)
 
 **Design doc:** `docs/plans/2026-03-09-discord-mcp-design.md`
 
@@ -32,9 +32,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "inspector": "npx @modelcontextprotocol/inspector node build/index.js"
+    "test": "bun test",
+    "inspector": "bunx @modelcontextprotocol/inspector node build/index.js"
   },
   "files": ["build"]
 }
@@ -72,8 +71,8 @@ build/
 
 Run:
 ```bash
-npm install @modelcontextprotocol/sdk zod
-npm install -D @types/node typescript vitest
+bun add @modelcontextprotocol/sdk zod
+bun add -D @types/node typescript @types/bun
 ```
 
 **Step 5: Create placeholder src/index.ts**
@@ -85,13 +84,13 @@ console.error("discord-mcp server starting...");
 
 **Step 6: Verify build**
 
-Run: `npm run build`
-Expected: `build/index.ts` created, no errors.
+Run: `bun run build`
+Expected: `build/index.js` created, no errors.
 
 **Step 7: Commit**
 
 ```bash
-git add package.json tsconfig.json .gitignore src/index.ts package-lock.json
+git add package.json tsconfig.json .gitignore src/index.ts bun.lockb
 git commit -m "chore: scaffold project with dependencies"
 ```
 
@@ -254,7 +253,7 @@ git commit -m "feat: add Discord API and logger types"
 **Step 1: Write the logger tests**
 
 ```typescript
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, mock } from "bun:test";
 import { Logger } from "../src/logger.js";
 
 describe("Logger", () => {
@@ -363,12 +362,15 @@ describe("Logger", () => {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `npx vitest run tests/logger.test.ts`
+Run: `bun test tests/logger.test.ts`
 Expected: FAIL — `Cannot find module '../src/logger.js'`
 
 **Step 3: Implement logger**
 
 ```typescript
+import { appendFileSync, mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import type { RequestLog } from "./types.js";
 
 interface Stats {
@@ -403,9 +405,30 @@ export class Logger {
   private totalDelay = 0;
   private totalResponseMs = 0;
   private readonly STATS_INTERVAL = 50;
+  private readonly logDir: string;
+  private readonly logFile: string;
+
+  constructor(logDir?: string) {
+    this.logDir = logDir ?? join(homedir(), ".discord-mcp", "logs");
+    if (!existsSync(this.logDir)) {
+      mkdirSync(this.logDir, { recursive: true });
+    }
+    const date = new Date().toISOString().split("T")[0];
+    this.logFile = join(this.logDir, `${date}.log`);
+  }
+
+  private writeToFile(line: string): void {
+    try {
+      appendFileSync(this.logFile, line + "\n");
+    } catch {
+      // If file write fails, still continue — don't crash the server
+    }
+  }
 
   logRequest(log: RequestLog): void {
-    console.error(JSON.stringify(log));
+    const line = JSON.stringify(log);
+    console.error(line);
+    this.writeToFile(line);
 
     this.stats.totalRequests++;
     this.stats.requestsByTool[log.tool] =
@@ -455,13 +478,14 @@ export class Logger {
     ].join("\n");
 
     console.error(summary);
+    this.writeToFile(summary);
   }
 }
 ```
 
 **Step 4: Run tests to verify they pass**
 
-Run: `npx vitest run tests/logger.test.ts`
+Run: `bun test tests/logger.test.ts`
 Expected: All 3 tests PASS.
 
 **Step 5: Commit**
@@ -482,7 +506,7 @@ git commit -m "feat: add request logger with stats aggregation"
 **Step 1: Write tests for throttle queue and cache**
 
 ```typescript
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, mock } from "bun:test";
 import { DiscordClient } from "../src/discord.js";
 
 // Mock global fetch
@@ -608,7 +632,7 @@ describe("DiscordClient", () => {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `npx vitest run tests/discord.test.ts`
+Run: `bun test tests/discord.test.ts`
 Expected: FAIL — `Cannot find module '../src/discord.js'`
 
 **Step 3: Implement DiscordClient**
@@ -818,7 +842,7 @@ export class DiscordClient {
 
 **Step 4: Run tests to verify they pass**
 
-Run: `npx vitest run tests/discord.test.ts`
+Run: `bun test tests/discord.test.ts`
 Expected: All 4 tests PASS. The throttle test may take ~3s due to jitter delay.
 
 **Step 5: Commit**
@@ -839,7 +863,7 @@ git commit -m "feat: add DiscordClient with throttle, retry, and cache"
 **Step 1: Write formatter tests**
 
 ```typescript
-import { describe, it, expect } from "vitest";
+import { describe, it, expect } from "bun:test";
 import {
   formatMessages,
   formatChannels,
@@ -960,7 +984,7 @@ describe("formatSearchResults", () => {
 
 **Step 2: Run tests to verify they fail**
 
-Run: `npx vitest run tests/formatters.test.ts`
+Run: `bun test tests/formatters.test.ts`
 Expected: FAIL — `Cannot find module '../src/formatters.js'`
 
 **Step 3: Implement formatters**
@@ -1175,7 +1199,7 @@ export function formatReactions(
 
 **Step 4: Run tests to verify they pass**
 
-Run: `npx vitest run tests/formatters.test.ts`
+Run: `bun test tests/formatters.test.ts`
 Expected: All tests PASS.
 
 **Step 5: Commit**
@@ -1387,12 +1411,12 @@ main().catch((error) => {
 
 **Step 2: Build and verify**
 
-Run: `npm run build`
+Run: `bun run build`
 Expected: No compilation errors.
 
 **Step 3: Test with MCP Inspector**
 
-Run: `DISCORD_TOKEN=your_token DISCORD_GUILD_ID=your_guild npx @modelcontextprotocol/inspector node build/index.js`
+Run: `DISCORD_TOKEN=your_token DISCORD_GUILD_ID=your_guild bunx @modelcontextprotocol/inspector node build/index.js`
 
 Test each tool in the Inspector UI:
 - `get_me` — should return your user info
@@ -1586,7 +1610,7 @@ Note: the imports at the top of `src/index.ts` need to be updated to include `fo
 
 **Step 2: Build and verify**
 
-Run: `npm run build`
+Run: `bun run build`
 Expected: No compilation errors.
 
 **Step 3: Test with MCP Inspector**
@@ -1734,7 +1758,7 @@ Note: update imports at the top of `src/index.ts` to include `formatThreadPartic
 
 **Step 2: Build and verify**
 
-Run: `npm run build`
+Run: `bun run build`
 Expected: No compilation errors.
 
 **Step 3: Test with MCP Inspector**
@@ -1765,13 +1789,28 @@ Read-only Discord MCP server for Claude Code. Access channels, messages, threads
 ## Setup
 
 ```bash
-npm install
-npm run build
+bun install
+bun run build
+```
+
+## Running
+
+```bash
+# Direct run (for testing)
+DISCORD_TOKEN=your_token DISCORD_GUILD_ID=your_guild bun run build/index.js
+
+# Or via Claude Code (see Configuration below)
 ```
 
 ## Configuration
 
-Add to your Claude Code MCP config (`claude mcp add` or edit settings):
+Add to your Claude Code MCP config:
+
+```bash
+claude mcp add discord -t stdio -e DISCORD_TOKEN=your_token -e DISCORD_GUILD_ID=your_guild -- node /absolute/path/to/discord-mcp/build/index.js
+```
+
+Or manually in settings:
 
 ```json
 {
@@ -1790,14 +1829,21 @@ Add to your Claude Code MCP config (`claude mcp add` or edit settings):
 
 ### Getting your Discord token
 
-1. Open Discord in your browser
-2. Open DevTools (F12) → Network tab
-3. Send a message or navigate to any channel
-4. Find any request to `discord.com/api` → Headers → copy the `Authorization` value
+1. Open Discord **in your browser** (not the desktop app)
+2. Open DevTools: `Cmd+Option+I` (Mac) or `F12` (Windows/Linux)
+3. Go to the **Network** tab
+4. Do anything in Discord (send a message, switch channels)
+5. Click any request to `https://discord.com/api/...`
+6. In the **Headers** tab, find `Authorization` — that's your token
+7. Copy the value (it does NOT start with `Bot`)
+
+> **Important:** Never share your token. Anyone with it has full access to your Discord account.
 
 ### Getting a Guild ID
 
-Right-click the server name → Copy Server ID (requires Developer Mode in Discord settings).
+1. Open Discord Settings → Advanced → enable **Developer Mode**
+2. Right-click the server name in the sidebar
+3. Click **Copy Server ID**
 
 ## Tools
 
@@ -1820,11 +1866,11 @@ The [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) lets y
 
 ```bash
 # Build first
-npm run build
+bun run build
 
-# Launch inspector with your token
+# Launch inspector
 DISCORD_TOKEN=your_token DISCORD_GUILD_ID=your_guild \
-  npx @modelcontextprotocol/inspector node build/index.js
+  bunx @modelcontextprotocol/inspector node build/index.js
 ```
 
 This opens a browser UI where you can:
@@ -1833,11 +1879,19 @@ This opens a browser UI where you can:
 - View formatted responses
 - Monitor server logs
 
+## Logs
+
+All requests are logged as JSON lines to:
+- **stderr** (visible in terminal)
+- **`~/.discord-mcp/logs/YYYY-MM-DD.log`** (persistent, for tuning)
+
+Aggregate stats are printed every 50 requests and on process exit.
+
 ## Rate Limiting
 
 - Global throttle: 1 request per 3-7 seconds (randomized jitter)
 - Retry on 429: max 2 retries with backoff
-- All requests are logged as JSON lines to stderr for tuning
+- Respects Discord `X-RateLimit-*` headers
 
 ## Disclaimer
 
@@ -1857,7 +1911,7 @@ git commit -m "docs: add README with setup, tools, and testing guide"
 
 After all tasks:
 
-1. `npm run build` — clean build
-2. `npm test` — all unit tests pass
+1. `bun run build` — clean build
+2. `bun test` — all unit tests pass
 3. MCP Inspector — all 10 tools work
 4. Connect to Claude Code and test real usage

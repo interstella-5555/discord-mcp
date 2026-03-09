@@ -7,6 +7,7 @@ Read-only MCP server for Claude Code that provides access to Discord via user to
 ## Stack
 
 - TypeScript + `@modelcontextprotocol/sdk` + `zod`
+- Runtime: `bun`
 - Transport: stdio
 - No external dependencies beyond the MCP SDK
 
@@ -148,7 +149,7 @@ DM Conversations:
 
 ## Logging & Stats
 
-All logging via `console.error()` (safe for stdio transport). Format: JSON lines for grepability.
+Logging via `console.error()` (safe for stdio transport) AND persistent file at `~/.discord-mcp/logs/YYYY-MM-DD.log`. Format: JSON lines for grepability.
 
 **Per-request log:**
 ```json
