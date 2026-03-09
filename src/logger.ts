@@ -1,0 +1,113 @@
+import { appendFileSync, mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import type { RequestLog } from "./types.js";
+
+interface Stats {
+  totalRequests: number;
+  requestsByTool: Record<string, number>;
+  errors429: number;
+  error429Details: { tool: string; ts: string }[];
+  avgDelayMs: number;
+  minDelayMs: number;
+  maxDelayMs: number;
+  avgResponseMs: number;
+  peakQueueDepth: number;
+  peakQueueTs: string;
+  startTime: number;
+}
+
+export class Logger {
+  private stats: Stats = {
+    totalRequests: 0,
+    requestsByTool: {},
+    errors429: 0,
+    error429Details: [],
+    avgDelayMs: 0,
+    minDelayMs: Infinity,
+    maxDelayMs: 0,
+    avgResponseMs: 0,
+    peakQueueDepth: 0,
+    peakQueueTs: "",
+    startTime: Date.now(),
+  };
+
+  private totalDelay = 0;
+  private totalResponseMs = 0;
+  private readonly STATS_INTERVAL = 50;
+  private readonly logDir: string;
+  private readonly logFile: string;
+
+  constructor(logDir?: string) {
+    this.logDir = logDir ?? join(homedir(), ".discord-mcp", "logs");
+    if (!existsSync(this.logDir)) {
+      mkdirSync(this.logDir, { recursive: true });
+    }
+    const date = new Date().toISOString().split("T")[0];
+    this.logFile = join(this.logDir, `${date}.log`);
+  }
+
+  private writeToFile(line: string): void {
+    try {
+      appendFileSync(this.logFile, line + "\n");
+    } catch {
+      // If file write fails, still continue — don't crash the server
+    }
+  }
+
+  logRequest(log: RequestLog): void {
+    const line = JSON.stringify(log);
+    console.error(line);
+    this.writeToFile(line);
+
+    this.stats.totalRequests++;
+    this.stats.requestsByTool[log.tool] =
+      (this.stats.requestsByTool[log.tool] || 0) + 1;
+
+    this.totalDelay += log.delay;
+    this.totalResponseMs += log.ms;
+    this.stats.avgDelayMs = this.totalDelay / this.stats.totalRequests;
+    this.stats.avgResponseMs = this.totalResponseMs / this.stats.totalRequests;
+
+    if (log.delay < this.stats.minDelayMs) this.stats.minDelayMs = log.delay;
+    if (log.delay > this.stats.maxDelayMs) this.stats.maxDelayMs = log.delay;
+
+    if (log.queue > this.stats.peakQueueDepth) {
+      this.stats.peakQueueDepth = log.queue;
+      this.stats.peakQueueTs = log.ts;
+    }
+
+    if (log.status === 429) {
+      this.stats.errors429++;
+      this.stats.error429Details.push({ tool: log.tool, ts: log.ts });
+    }
+
+    if (this.stats.totalRequests % this.STATS_INTERVAL === 0) {
+      this.printStats();
+    }
+  }
+
+  getStats(): Stats {
+    return { ...this.stats };
+  }
+
+  printStats(): void {
+    const uptime = Date.now() - this.stats.startTime;
+    const hours = Math.floor(uptime / 3600000);
+    const minutes = Math.floor((uptime % 3600000) / 60000);
+
+    const summary = [
+      "=== Discord MCP Stats ===",
+      `Uptime: ${hours}h ${minutes}m`,
+      `Total requests: ${this.stats.totalRequests}`,
+      `Requests by tool: ${JSON.stringify(this.stats.requestsByTool)}`,
+      `429 errors: ${this.stats.errors429}${this.stats.error429Details.length > 0 ? ` (${this.stats.error429Details.map((e) => `${e.tool} @ ${e.ts}`).join(", ")})` : ""}`,
+      `Avg delay: ${this.stats.avgDelayMs.toFixed(1)}s (min: ${this.stats.minDelayMs === Infinity ? "N/A" : this.stats.minDelayMs.toFixed(1)}s, max: ${this.stats.maxDelayMs.toFixed(1)}s)`,
+      `Avg response time: ${this.stats.avgResponseMs.toFixed(0)}ms`,
+      `Peak queue depth: ${this.stats.peakQueueDepth}${this.stats.peakQueueTs ? ` (at ${this.stats.peakQueueTs})` : ""}`,
+    ].join("\n");
+
+    console.error(summary);
+    this.writeToFile(summary);
+  }
+}
