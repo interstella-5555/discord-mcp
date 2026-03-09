@@ -3,6 +3,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import ms from "ms";
 import { DiscordClient } from "./discord.js";
 import { Logger } from "./logger.js";
 import {
@@ -100,7 +101,7 @@ server.registerTool(
       path,
       {
         tool: "list_guilds",
-        cacheTtl: 4 * 60 * 60 * 1000, // 4 hours
+        cacheTtl: ms("4h"),
       }
     );
     return {
@@ -203,7 +204,7 @@ server.registerTool(
       "/users/@me/channels",
       {
         tool: "list_dms",
-        cacheTtl: 5 * 60 * 1000, // 5 min
+        cacheTtl: ms("5m"),
       }
     );
     return {

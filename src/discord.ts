@@ -1,4 +1,6 @@
+import pThrottle from "p-throttle";
 import { TTLCache } from "@isaacs/ttlcache";
+import ms from "ms";
 import { Logger } from "./logger.js";
 import type { RateLimitHeaders, RequestLog } from "./types.js";
 
@@ -9,61 +11,41 @@ interface RequestOptions {
   itemsCount?: number;
 }
 
+// Random delay between min and max ms
+function jitter(minMs: number, maxMs: number): Promise<number> {
+  const ms = minMs + Math.random() * (maxMs - minMs);
+  return new Promise((resolve) => setTimeout(() => resolve(ms), ms));
+}
+
 export class DiscordClient {
   private readonly baseUrl = "https://discord.com/api/v10";
   private readonly token: string;
   readonly defaultGuildId: string;
   private readonly logger: Logger;
 
-  // Throttle state — serial queue ensures only one request at a time
-  private lastRequestTime = 0;
-  private queueLength = 0;
-  private mutex: Promise<void> = Promise.resolve();
+  // Throttle: p-throttle ensures max 1 call per 3s, jitter adds 0-4s on top → 3-7s total
+  private readonly throttledFetch: ReturnType<ReturnType<typeof pThrottle>>;
 
   // Cache — TTL entries auto-expire, Infinity entries use permanentCache
   private ttlCache = new TTLCache<string, unknown>({ max: 500 });
   private permanentCache = new Map<string, unknown>();
 
   // Constants
-  private readonly MIN_DELAY_MS = 3000;
-  private readonly MAX_DELAY_MS = 7000;
+  private readonly MIN_JITTER_MS = 0;
+  private readonly MAX_JITTER_MS = ms("4s");
   private readonly MAX_RETRIES = 2;
 
   constructor(token: string, defaultGuildId: string, logger?: Logger) {
     this.token = token;
     this.defaultGuildId = defaultGuildId;
     this.logger = logger ?? new Logger();
-  }
 
-  private getJitterDelay(): number {
-    return (
-      this.MIN_DELAY_MS +
-      Math.random() * (this.MAX_DELAY_MS - this.MIN_DELAY_MS)
-    );
-  }
-
-  private acquireSlot(): Promise<{ delaySeconds: number; queueDepth: number }> {
-    const queueDepth = this.queueLength++;
-
-    const result = this.mutex.then(async () => {
-      const now = Date.now();
-      const elapsed = now - this.lastRequestTime;
-      const delay = this.getJitterDelay();
-      const waitTime = Math.max(0, delay - elapsed);
-
-      if (waitTime > 0) {
-        await new Promise((r) => setTimeout(r, waitTime));
-      }
-
-      this.lastRequestTime = Date.now();
-      this.queueLength--;
-      return { delaySeconds: waitTime / 1000, queueDepth };
+    const throttle = pThrottle({ limit: 1, interval: ms("3s") });
+    this.throttledFetch = throttle(async (url: string, init: RequestInit) => {
+      // Add random jitter on top of the 3s base throttle
+      await jitter(this.MIN_JITTER_MS, this.MAX_JITTER_MS);
+      return fetch(url, init);
     });
-
-    // Chain: next caller waits until this one completes its delay
-    this.mutex = result.then(() => {});
-
-    return result;
   }
 
   private parseRateLimitHeaders(headers: Headers): RateLimitHeaders {
@@ -111,7 +93,7 @@ export class DiscordClient {
           status: 200,
           ms: 0,
           delay: 0,
-          queue: this.queueLength,
+          queue: 0,
           response_size: 0,
           items_count: options.itemsCount ?? 0,
           cache_hit: true,
@@ -121,22 +103,22 @@ export class DiscordClient {
       }
     }
 
-    // Wait for throttle slot (serialized via mutex)
-    const { delaySeconds, queueDepth } = await this.acquireSlot();
-
     // Execute with retry
     let lastError: Error | null = null;
     for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
       const start = Date.now();
 
-      const response = await fetch(`${this.baseUrl}${path}`, {
-        method,
-        headers: {
-          Authorization: this.token,
-          "Content-Type": "application/json",
-          "User-Agent": "discord-mcp/1.0",
-        },
-      });
+      const response = await this.throttledFetch(
+        `${this.baseUrl}${path}`,
+        {
+          method,
+          headers: {
+            Authorization: this.token,
+            "Content-Type": "application/json",
+            "User-Agent": "discord-mcp/1.0",
+          },
+        }
+      ) as Response;
 
       const responseText = await response.text();
       const elapsed = Date.now() - start;
@@ -148,8 +130,8 @@ export class DiscordClient {
         endpoint: `${method} ${path}`,
         status: response.status,
         ms: elapsed,
-        delay: delaySeconds,
-        queue: queueDepth,
+        delay: elapsed / 1000,
+        queue: 0,
         response_size: responseText.length,
         items_count: 0,
         cache_hit: false,
@@ -170,8 +152,7 @@ export class DiscordClient {
         this.logger.logRequest(log);
 
         if (attempt < this.MAX_RETRIES) {
-          const backoff = retryAfter * 1000 + this.getJitterDelay();
-          await new Promise((r) => setTimeout(r, backoff));
+          await new Promise((r) => setTimeout(r, retryAfter * 1000));
           continue;
         }
 

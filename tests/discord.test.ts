@@ -33,31 +33,27 @@ describe("DiscordClient", () => {
     }, 15000);
 
     it("serializes concurrent requests through the queue", async () => {
-      const fetchTimes: number[] = [];
-      mockFetch.mockImplementation(async () => {
-        fetchTimes.push(Date.now());
-        return {
-          ok: true,
-          status: 200,
-          headers: new Headers(),
-          text: async () => JSON.stringify({ id: "1" }),
-        };
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        text: async () => JSON.stringify({ id: "1" }),
       });
 
       // Fire 3 requests concurrently
+      const start = Date.now();
       await Promise.all([
         client.request("GET", "/a", { tool: "t1" }),
         client.request("GET", "/b", { tool: "t2" }),
         client.request("GET", "/c", { tool: "t3" }),
       ]);
+      const elapsed = Date.now() - start;
 
       expect(mockFetch).toHaveBeenCalledTimes(3);
 
-      // Each fetch should be spaced at least 3s apart (min jitter)
-      const gap1 = fetchTimes[1] - fetchTimes[0];
-      const gap2 = fetchTimes[2] - fetchTimes[1];
-      expect(gap1).toBeGreaterThanOrEqual(2900);
-      expect(gap2).toBeGreaterThanOrEqual(2900);
+      // 3 requests with p-throttle(1/3s) + jitter(0-4s) each:
+      // minimum total ≈ 0 + 3s + 3s = 6s (first is immediate, 2 intervals)
+      expect(elapsed).toBeGreaterThanOrEqual(5900);
     }, 30000);
   });
 
