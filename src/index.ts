@@ -31,14 +31,10 @@ import type {
 
 // --- Config from env ---
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
+const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID ?? "";
 
 if (!DISCORD_TOKEN) {
   console.error("DISCORD_TOKEN env var is required");
-  process.exit(1);
-}
-if (!DISCORD_GUILD_ID) {
-  console.error("DISCORD_GUILD_ID env var is required");
   process.exit(1);
 }
 
@@ -50,6 +46,16 @@ const server = new McpServer({
   name: "discord-mcp",
   version: "1.0.0",
 });
+
+function resolveGuildId(guild_id?: string): string {
+  const gid = resolveGuildId(guild_id);
+  if (!gid) {
+    throw new Error(
+      "guild_id is required (no DISCORD_GUILD_ID configured). Use list_guilds to find your guild ID."
+    );
+  }
+  return gid;
+}
 
 // --- Tools ---
 
@@ -118,7 +124,7 @@ server.registerTool(
     }),
   },
   async ({ guild_id }) => {
-    const gid = guild_id || discord.defaultGuildId;
+    const gid = resolveGuildId(guild_id);
     const channels = await discord.request<DiscordChannel[]>(
       "GET",
       `/guilds/${gid}/channels`,
@@ -247,7 +253,7 @@ server.registerTool(
     }),
   },
   async ({ guild_id, query, author_id, channel_id, has, before, after, in_thread }) => {
-    const gid = guild_id || discord.defaultGuildId;
+    const gid = resolveGuildId(guild_id);
     const params = new URLSearchParams();
     if (query) params.set("content", query);
     if (author_id) params.set("author_id", author_id);
@@ -300,7 +306,7 @@ server.registerTool(
       );
       threads = response.threads;
     } else {
-      const gid = discord.defaultGuildId;
+      const gid = resolveGuildId();
       const response = await discord.request<{ threads: DiscordThread[] }>(
         "GET",
         `/guilds/${gid}/threads/active`,
@@ -383,7 +389,7 @@ server.registerTool(
     );
 
     let member: DiscordGuildMember | undefined;
-    const gid = guild_id || discord.defaultGuildId;
+    const gid = resolveGuildId(guild_id);
     try {
       member = await discord.request<DiscordGuildMember>(
         "GET",
