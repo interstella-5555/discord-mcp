@@ -100,7 +100,7 @@ server.registerTool(
       path,
       {
         tool: "list_guilds",
-        cacheTtl: 60 * 60 * 1000, // 1 hour
+        cacheTtl: 4 * 60 * 60 * 1000, // 4 hours
       }
     );
     return {
