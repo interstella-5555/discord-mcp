@@ -15,12 +15,10 @@ export class DiscordClient {
   readonly defaultGuildId: string;
   private readonly logger: Logger;
 
-  // Throttle state
+  // Throttle state — serial queue ensures only one request at a time
   private lastRequestTime = 0;
-  private queue: Array<{
-    resolve: () => void;
-  }> = [];
-  private processing = false;
+  private queueLength = 0;
+  private mutex: Promise<void> = Promise.resolve();
 
   // Cache — TTL entries auto-expire, Infinity entries use permanentCache
   private ttlCache = new TTLCache<string, unknown>({ max: 500 });
@@ -44,18 +42,28 @@ export class DiscordClient {
     );
   }
 
-  private async waitForSlot(): Promise<number> {
-    const now = Date.now();
-    const elapsed = now - this.lastRequestTime;
-    const delay = this.getJitterDelay();
-    const waitTime = Math.max(0, delay - elapsed);
+  private acquireSlot(): Promise<{ delaySeconds: number; queueDepth: number }> {
+    const queueDepth = this.queueLength++;
 
-    if (waitTime > 0) {
-      await new Promise((r) => setTimeout(r, waitTime));
-    }
+    const result = this.mutex.then(async () => {
+      const now = Date.now();
+      const elapsed = now - this.lastRequestTime;
+      const delay = this.getJitterDelay();
+      const waitTime = Math.max(0, delay - elapsed);
 
-    this.lastRequestTime = Date.now();
-    return waitTime / 1000; // return delay in seconds for logging
+      if (waitTime > 0) {
+        await new Promise((r) => setTimeout(r, waitTime));
+      }
+
+      this.lastRequestTime = Date.now();
+      this.queueLength--;
+      return { delaySeconds: waitTime / 1000, queueDepth };
+    });
+
+    // Chain: next caller waits until this one completes its delay
+    this.mutex = result.then(() => {});
+
+    return result;
   }
 
   private parseRateLimitHeaders(headers: Headers): RateLimitHeaders {
@@ -103,7 +111,7 @@ export class DiscordClient {
           status: 200,
           ms: 0,
           delay: 0,
-          queue: this.queue.length,
+          queue: this.queueLength,
           response_size: 0,
           items_count: options.itemsCount ?? 0,
           cache_hit: true,
@@ -113,9 +121,8 @@ export class DiscordClient {
       }
     }
 
-    // Wait for throttle slot
-    const queueDepth = this.queue.length;
-    const delaySeconds = await this.waitForSlot();
+    // Wait for throttle slot (serialized via mutex)
+    const { delaySeconds, queueDepth } = await this.acquireSlot();
 
     // Execute with retry
     let lastError: Error | null = null;

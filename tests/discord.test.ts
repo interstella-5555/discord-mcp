@@ -31,6 +31,34 @@ describe("DiscordClient", () => {
       // Second request should have waited at least 3s (min jitter)
       expect(elapsed).toBeGreaterThanOrEqual(2900);
     }, 15000);
+
+    it("serializes concurrent requests through the queue", async () => {
+      const fetchTimes: number[] = [];
+      mockFetch.mockImplementation(async () => {
+        fetchTimes.push(Date.now());
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => JSON.stringify({ id: "1" }),
+        };
+      });
+
+      // Fire 3 requests concurrently
+      await Promise.all([
+        client.request("GET", "/a", { tool: "t1" }),
+        client.request("GET", "/b", { tool: "t2" }),
+        client.request("GET", "/c", { tool: "t3" }),
+      ]);
+
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+
+      // Each fetch should be spaced at least 3s apart (min jitter)
+      const gap1 = fetchTimes[1] - fetchTimes[0];
+      const gap2 = fetchTimes[2] - fetchTimes[1];
+      expect(gap1).toBeGreaterThanOrEqual(2900);
+      expect(gap2).toBeGreaterThanOrEqual(2900);
+    }, 30000);
   });
 
   describe("cache", () => {
