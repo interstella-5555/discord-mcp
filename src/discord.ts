@@ -1,3 +1,4 @@
+import { TTLCache } from "@isaacs/ttlcache";
 import { Logger } from "./logger.js";
 import type { RateLimitHeaders, RequestLog } from "./types.js";
 
@@ -6,11 +7,6 @@ interface RequestOptions {
   params?: Record<string, unknown>;
   cacheTtl?: number; // ms, Infinity for permanent
   itemsCount?: number;
-}
-
-interface CacheEntry {
-  data: unknown;
-  expiry: number; // timestamp, Infinity for permanent
 }
 
 export class DiscordClient {
@@ -26,8 +22,9 @@ export class DiscordClient {
   }> = [];
   private processing = false;
 
-  // Cache
-  private cache = new Map<string, CacheEntry>();
+  // Cache — TTL entries auto-expire, Infinity entries use permanentCache
+  private ttlCache = new TTLCache<string, unknown>({ max: 500 });
+  private permanentCache = new Map<string, unknown>();
 
   // Constants
   private readonly MIN_DELAY_MS = 3000;
@@ -73,6 +70,21 @@ export class DiscordClient {
     };
   }
 
+  private cacheGet(key: string, ttl: number): unknown | undefined {
+    if (ttl === Infinity) {
+      return this.permanentCache.get(key);
+    }
+    return this.ttlCache.get(key);
+  }
+
+  private cacheSet(key: string, data: unknown, ttl: number): void {
+    if (ttl === Infinity) {
+      this.permanentCache.set(key, data);
+    } else {
+      this.ttlCache.set(key, data, { ttl });
+    }
+  }
+
   async request<T = unknown>(
     method: string,
     path: string,
@@ -82,8 +94,8 @@ export class DiscordClient {
 
     // Check cache
     if (options.cacheTtl) {
-      const cached = this.cache.get(cacheKey);
-      if (cached && (cached.expiry === Infinity || cached.expiry > Date.now())) {
+      const cached = this.cacheGet(cacheKey, options.cacheTtl);
+      if (cached !== undefined) {
         this.logger.logRequest({
           ts: new Date().toISOString(),
           tool: options.tool,
@@ -97,7 +109,7 @@ export class DiscordClient {
           cache_hit: true,
           params: options.params ?? {},
         });
-        return cached.data as T;
+        return cached as T;
       }
     }
 
@@ -179,13 +191,7 @@ export class DiscordClient {
 
       // Cache if requested
       if (options.cacheTtl) {
-        this.cache.set(cacheKey, {
-          data,
-          expiry:
-            options.cacheTtl === Infinity
-              ? Infinity
-              : Date.now() + options.cacheTtl,
-        });
+        this.cacheSet(cacheKey, data, options.cacheTtl);
       }
 
       return data as T;
