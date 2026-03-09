@@ -88,6 +88,16 @@ export interface DiscordReactionUser {
   global_name: string | null;
 }
 
+export interface DiscordPartialGuild {
+  id: string;
+  name: string;
+  icon: string | null;
+  owner: boolean;
+  permissions: string;
+  approximate_member_count?: number;
+  approximate_presence_count?: number;
+}
+
 // Channel types enum
 export const ChannelType = {
   GUILD_TEXT: 0,

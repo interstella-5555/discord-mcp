@@ -14,6 +14,7 @@ import {
   formatPinnedMessages,
   formatThreadParticipants,
   formatReactions,
+  formatGuilds,
 } from "./formatters.js";
 import type {
   DiscordUser,
@@ -23,6 +24,7 @@ import type {
   DiscordSearchResult,
   DiscordThread,
   DiscordGuildMember,
+  DiscordPartialGuild,
   DiscordThreadMember,
   DiscordReactionUser,
 } from "./types.js";
@@ -65,6 +67,38 @@ server.registerTool(
     });
     return {
       content: [{ type: "text" as const, text: formatUser(user) }],
+    };
+  }
+);
+
+server.registerTool(
+  "list_guilds",
+  {
+    description:
+      "List all Discord servers (guilds) the current user is a member of. Returns server names and IDs.",
+    inputSchema: z.object({
+      with_counts: z
+        .boolean()
+        .optional()
+        .describe("Include approximate member and presence counts (default false)"),
+    }),
+  },
+  async ({ with_counts }) => {
+    const params = new URLSearchParams();
+    if (with_counts) params.set("with_counts", "true");
+    const query = params.toString();
+    const path = `/users/@me/guilds${query ? `?${query}` : ""}`;
+
+    const guilds = await discord.request<DiscordPartialGuild[]>(
+      "GET",
+      path,
+      {
+        tool: "list_guilds",
+        cacheTtl: 60 * 60 * 1000, // 1 hour
+      }
+    );
+    return {
+      content: [{ type: "text" as const, text: formatGuilds(guilds) }],
     };
   }
 );

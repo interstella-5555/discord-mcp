@@ -8,6 +8,7 @@ import type {
   DiscordThreadMember,
   DiscordReactionUser,
   DiscordAttachment,
+  DiscordPartialGuild,
 } from "./types.js";
 import { ChannelType } from "./types.js";
 
@@ -202,4 +203,16 @@ export function formatReactions(
 ): string {
   if (users.length === 0) return `No reactions with ${emoji}.`;
   return `Reactions ${emoji} (${users.length}):\n${users.map((u) => `- @${u.username}${u.global_name ? ` (${u.global_name})` : ""}`).join("\n")}`;
+}
+
+export function formatGuilds(guilds: DiscordPartialGuild[]): string {
+  if (guilds.length === 0) return "No servers found.";
+
+  const lines: string[] = [`Servers (${guilds.length}):`];
+  for (const g of guilds) {
+    const owner = g.owner ? " (owner)" : "";
+    const members = g.approximate_member_count ? `, ~${g.approximate_member_count} members` : "";
+    lines.push(`- ${g.name} (id: ${g.id}${owner}${members})`);
+  }
+  return lines.join("\n");
 }
