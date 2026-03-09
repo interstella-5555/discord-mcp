@@ -12,6 +12,8 @@ import {
   formatUser,
   formatSearchResults,
   formatPinnedMessages,
+  formatThreadParticipants,
+  formatReactions,
 } from "./formatters.js";
 import type {
   DiscordUser,
@@ -20,6 +22,9 @@ import type {
   DiscordDMChannel,
   DiscordSearchResult,
   DiscordThread,
+  DiscordGuildMember,
+  DiscordThreadMember,
+  DiscordReactionUser,
 } from "./types.js";
 
 // --- Config from env ---
@@ -315,6 +320,113 @@ server.registerTool(
     return {
       content: [
         { type: "text" as const, text: formatPinnedMessages(messages) },
+      ],
+    };
+  }
+);
+
+server.registerTool(
+  "get_user_info",
+  {
+    description:
+      "Get info about a Discord user. Optionally include server-specific info (nickname, roles, join date) by providing guild_id.",
+    inputSchema: z.object({
+      user_id: z.string().describe("Discord user ID"),
+      guild_id: z
+        .string()
+        .optional()
+        .describe("Guild ID for server-specific info (defaults to config)"),
+    }),
+  },
+  async ({ user_id, guild_id }) => {
+    const user = await discord.request<DiscordUser>(
+      "GET",
+      `/users/${user_id}`,
+      {
+        tool: "get_user_info",
+        params: { user_id },
+      }
+    );
+
+    let member: DiscordGuildMember | undefined;
+    const gid = guild_id || discord.defaultGuildId;
+    try {
+      member = await discord.request<DiscordGuildMember>(
+        "GET",
+        `/guilds/${gid}/members/${user_id}`,
+        {
+          tool: "get_user_info",
+          params: { user_id, guild_id: gid },
+        }
+      );
+    } catch {
+      // User might not be in this guild
+    }
+
+    return {
+      content: [
+        { type: "text" as const, text: formatUser(user, member) },
+      ],
+    };
+  }
+);
+
+server.registerTool(
+  "get_thread_participants",
+  {
+    description: "Get list of participants in a thread",
+    inputSchema: z.object({
+      channel_id: z.string().describe("Thread channel ID"),
+    }),
+  },
+  async ({ channel_id }) => {
+    const members = await discord.request<DiscordThreadMember[]>(
+      "GET",
+      `/channels/${channel_id}/thread-members`,
+      {
+        tool: "get_thread_participants",
+        params: { channel_id },
+      }
+    );
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: formatThreadParticipants(members),
+        },
+      ],
+    };
+  }
+);
+
+server.registerTool(
+  "list_reactions",
+  {
+    description:
+      "Get users who reacted with a specific emoji on a message",
+    inputSchema: z.object({
+      channel_id: z.string().describe("Channel ID containing the message"),
+      message_id: z.string().describe("Message ID"),
+      emoji: z
+        .string()
+        .describe(
+          "Emoji to check (unicode emoji like 👍 or custom emoji format name:id)"
+        ),
+    }),
+  },
+  async ({ channel_id, message_id, emoji }) => {
+    const encodedEmoji = encodeURIComponent(emoji);
+    const users = await discord.request<DiscordReactionUser[]>(
+      "GET",
+      `/channels/${channel_id}/messages/${message_id}/reactions/${encodedEmoji}`,
+      {
+        tool: "list_reactions",
+        params: { channel_id, message_id, emoji },
+      }
+    );
+    return {
+      content: [
+        { type: "text" as const, text: formatReactions(users, emoji) },
       ],
     };
   }
