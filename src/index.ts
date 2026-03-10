@@ -32,7 +32,6 @@ import type {
 
 // --- Config from env ---
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID ?? "";
 
 if (!DISCORD_TOKEN) {
   console.error("DISCORD_TOKEN env var is required");
@@ -41,21 +40,20 @@ if (!DISCORD_TOKEN) {
 
 // --- Init ---
 const logger = new Logger();
-const discord = new DiscordClient(DISCORD_TOKEN, DISCORD_GUILD_ID, logger);
+const discord = new DiscordClient(DISCORD_TOKEN, logger);
 
 const server = new McpServer({
   name: "discord-mcp",
   version: "1.0.0",
 });
 
-function resolveGuildId(guild_id?: string): string {
-  const gid = resolveGuildId(guild_id);
-  if (!gid) {
+function requireGuildId(guild_id?: string): string {
+  if (!guild_id) {
     throw new Error(
-      "guild_id is required (no DISCORD_GUILD_ID configured). Use list_guilds to find your guild ID."
+      "guild_id is required. Use list_guilds to find your guild ID."
     );
   }
-  return gid;
+  return guild_id;
 }
 
 // --- Tools ---
@@ -120,12 +118,12 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          "Guild ID (defaults to DISCORD_GUILD_ID from config)"
+          "Guild ID (use list_guilds to find)"
         ),
     }),
   },
   async ({ guild_id }) => {
-    const gid = resolveGuildId(guild_id);
+    const gid = requireGuildId(guild_id);
     const channels = await discord.request<DiscordChannel[]>(
       "GET",
       `/guilds/${gid}/channels`,
@@ -222,7 +220,7 @@ server.registerTool(
       guild_id: z
         .string()
         .optional()
-        .describe("Guild ID (defaults to config)"),
+        .describe("Guild ID (use list_guilds to find)"),
       query: z
         .string()
         .optional()
@@ -254,7 +252,7 @@ server.registerTool(
     }),
   },
   async ({ guild_id, query, author_id, channel_id, has, before, after, in_thread }) => {
-    const gid = resolveGuildId(guild_id);
+    const gid = requireGuildId(guild_id);
     const params = new URLSearchParams();
     if (query) params.set("content", query);
     if (author_id) params.set("author_id", author_id);
@@ -307,7 +305,7 @@ server.registerTool(
       );
       threads = response.threads;
     } else {
-      const gid = resolveGuildId();
+      const gid = requireGuildId();
       const response = await discord.request<{ threads: DiscordThread[] }>(
         "GET",
         `/guilds/${gid}/threads/active`,
@@ -376,7 +374,7 @@ server.registerTool(
       guild_id: z
         .string()
         .optional()
-        .describe("Guild ID for server-specific info (defaults to config)"),
+        .describe("Guild ID for server-specific info (use list_guilds to find)"),
     }),
   },
   async ({ user_id, guild_id }) => {
@@ -390,7 +388,7 @@ server.registerTool(
     );
 
     let member: DiscordGuildMember | undefined;
-    const gid = resolveGuildId(guild_id);
+    const gid = requireGuildId(guild_id);
     try {
       member = await discord.request<DiscordGuildMember>(
         "GET",

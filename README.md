@@ -13,7 +13,7 @@ bun run build
 
 ```bash
 # Direct run (for testing)
-DISCORD_TOKEN=your_token DISCORD_GUILD_ID=your_guild bun run build/index.js
+DISCORD_TOKEN=your_token bun run build/index.js
 
 # Or via Claude Code (see Configuration below)
 ```
@@ -23,7 +23,7 @@ DISCORD_TOKEN=your_token DISCORD_GUILD_ID=your_guild bun run build/index.js
 Add to your Claude Code MCP config:
 
 ```bash
-claude mcp add discord -t stdio -e DISCORD_TOKEN=your_token -e DISCORD_GUILD_ID=your_guild -- node /absolute/path/to/discord-mcp/build/index.js
+claude mcp add discord -s project -t stdio -e DISCORD_TOKEN=your_token -- node /absolute/path/to/discord-mcp/build/index.js
 ```
 
 Or manually in settings:
@@ -35,8 +35,7 @@ Or manually in settings:
       "command": "node",
       "args": ["/absolute/path/to/discord-mcp/build/index.js"],
       "env": {
-        "DISCORD_TOKEN": "your_user_token_here",
-        "DISCORD_GUILD_ID": "your_default_guild_id"
+        "DISCORD_TOKEN": "your_user_token_here"
       }
     }
   }
@@ -55,17 +54,12 @@ Or manually in settings:
 
 > **Important:** Never share your token. Anyone with it has full access to your Discord account.
 
-### Getting a Guild ID
-
-1. Open Discord Settings → Advanced → enable **Developer Mode**
-2. Right-click the server name in the sidebar
-3. Click **Copy Server ID**
-
 ## Tools
 
 | Tool | Description |
 |---|---|
 | `get_me` | Current user info |
+| `list_guilds` | List servers you're in (use to get guild IDs) |
 | `list_channels` | Server channels grouped by category |
 | `read_messages` | Read messages from any channel/thread/DM |
 | `list_dms` | List DM conversations |
@@ -85,12 +79,12 @@ The [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) lets y
 bun run build
 
 # Launch inspector
-DISCORD_TOKEN=your_token DISCORD_GUILD_ID=your_guild \
+DISCORD_TOKEN=your_token \
   bunx @modelcontextprotocol/inspector node build/index.js
 ```
 
 This opens a browser UI where you can:
-- See all 10 registered tools
+- See all 11 registered tools
 - Call any tool with custom inputs
 - View formatted responses
 - Monitor server logs

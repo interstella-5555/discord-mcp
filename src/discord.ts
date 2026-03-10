@@ -21,7 +21,6 @@ function jitter(minMs: number, maxMs: number): Promise<number> {
 export class DiscordClient {
   private readonly baseUrl = "https://discord.com/api/v10";
   private readonly token: string;
-  readonly defaultGuildId: string;
   private readonly logger: Logger;
 
   // Throttle: p-throttle ensures max 1 call per 3s, jitter adds 0-4s on top → 3-7s total
@@ -36,9 +35,8 @@ export class DiscordClient {
   private readonly MAX_JITTER_MS = ms("4s");
   private readonly MAX_RETRIES = 2;
 
-  constructor(token: string, defaultGuildId: string, logger?: Logger) {
+  constructor(token: string, logger?: Logger) {
     this.token = token;
-    this.defaultGuildId = defaultGuildId;
     this.logger = logger ?? new Logger();
 
     const throttle = pThrottle({ limit: 1, interval: ms("3s") });

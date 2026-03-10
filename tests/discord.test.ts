@@ -11,7 +11,7 @@ describe("DiscordClient", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    client = new DiscordClient("test-token", "test-guild");
+    client = new DiscordClient("test-token");
   });
 
   describe("throttle", () => {
