@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "bin": {
-    "discord-mcp": "./build/index.js"
+    "discord-mcp": "./src/index.ts"
   },
   "scripts": {
     "build": "tsc",
