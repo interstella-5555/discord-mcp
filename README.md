@@ -8,20 +8,8 @@ Requires [Bun](https://bun.sh) runtime.
 
 ### Via GitHub (no clone needed)
 
-Add to your Claude Code MCP config:
-
-```json
-{
-  "mcpServers": {
-    "discord": {
-      "command": "bunx",
-      "args": ["--bun", "github:interstella-5555/discord-mcp"],
-      "env": {
-        "DISCORD_TOKEN": "your_user_token_here"
-      }
-    }
-  }
-}
+```bash
+claude mcp add discord -s user -e DISCORD_TOKEN=your_token_here -- bunx --bun github:interstella-5555/discord-mcp
 ```
 
 ### From local clone
@@ -30,20 +18,7 @@ Add to your Claude Code MCP config:
 git clone git@github.com:interstella-5555/discord-mcp.git
 cd discord-mcp
 bun install
-```
-
-```json
-{
-  "mcpServers": {
-    "discord": {
-      "command": "bun",
-      "args": ["/absolute/path/to/discord-mcp/src/index.ts"],
-      "env": {
-        "DISCORD_TOKEN": "your_user_token_here"
-      }
-    }
-  }
-}
+claude mcp add discord -s user -e DISCORD_TOKEN=your_token_here -- bun src/index.ts
 ```
 
 ### Getting your Discord token
