@@ -4,8 +4,8 @@ import { Logger } from "../src/logger.js";
 describe("Logger", () => {
   let logger: Logger;
 
-  beforeEach(() => {
-    logger = new Logger();
+  beforeEach(async () => {
+    logger = await Logger.create();
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 

@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, existsSync } from "node:fs";
+import { appendFile, writeFile, mkdir, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import type { RequestLog } from "./types.js";
@@ -37,22 +37,49 @@ export class Logger {
   private readonly STATS_INTERVAL = 50;
   private readonly logDir: string;
   private readonly logFile: string;
+  private readonly responseDir: string;
 
-  constructor(logDir?: string) {
-    this.logDir = logDir ?? join(homedir(), ".discord-mcp", "logs");
-    if (!existsSync(this.logDir)) {
-      mkdirSync(this.logDir, { recursive: true });
-    }
+  private constructor(logDir: string, logFile: string, responseDir: string) {
+    this.logDir = logDir;
+    this.logFile = logFile;
+    this.responseDir = responseDir;
+  }
+
+  private static readonly RETENTION_DAYS = 3;
+
+  static async create(logDir?: string): Promise<Logger> {
+    const dir = logDir ?? join(homedir(), ".discord-mcp", "logs");
+    const responseDir = join(dir, "responses");
+    await mkdir(responseDir, { recursive: true });
     const date = new Date().toISOString().split("T")[0];
-    this.logFile = join(this.logDir, `${date}.log`);
+    const logFile = join(dir, `${date}.log`);
+    const logger = new Logger(dir, logFile, responseDir);
+    logger.pruneOldResponses().catch(() => {});
+    return logger;
+  }
+
+  private async pruneOldResponses(): Promise<void> {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - Logger.RETENTION_DAYS);
+    const files = await readdir(this.responseDir);
+    for (const file of files) {
+      // filename: 2026-03-11T19-41-23-456Z_tool_params.json
+      const dateStr = file.slice(0, 10);
+      if (dateStr < cutoff.toISOString().split("T")[0]) {
+        unlink(join(this.responseDir, file)).catch(() => {});
+      }
+    }
   }
 
   private writeToFile(line: string): void {
-    try {
-      appendFileSync(this.logFile, line + "\n");
-    } catch {
-      // If file write fails, still continue — don't crash the server
-    }
+    appendFile(this.logFile, line + "\n").catch(() => {});
+  }
+
+  logResponse(tool: string, params: Record<string, unknown>, data: unknown): void {
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const paramsB64 = Buffer.from(JSON.stringify(params)).toString("base64url");
+    const filename = `${ts}_${tool}_${paramsB64}.json`;
+    writeFile(join(this.responseDir, filename), JSON.stringify(data, null, 2)).catch(() => {});
   }
 
   logRequest(log: RequestLog): void {

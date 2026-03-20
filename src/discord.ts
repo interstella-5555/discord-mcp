@@ -1,50 +1,38 @@
-import { randomInt } from "node:crypto";
-import pThrottle from "p-throttle";
-import { TTLCache } from "@isaacs/ttlcache";
 import ms from "ms";
+import { Cache, defaultCache } from "./cache.js";
 import { Logger } from "./logger.js";
+import { defaultThrottle, Throttle } from "./throttle.js";
 import type { RateLimitHeaders, RequestLog } from "./types.js";
 
 interface RequestOptions {
   tool: string;
   params?: Record<string, unknown>;
-  cacheTtl?: number; // ms, Infinity for permanent
+  cacheTtl?: number; // ms
   itemsCount?: number;
-}
-
-// Cryptographically random delay between min and max ms
-function jitter(minMs: number, maxMs: number): Promise<number> {
-  const delay = randomInt(minMs, maxMs + 1);
-  return new Promise((resolve) => setTimeout(() => resolve(delay), delay));
 }
 
 export class DiscordClient {
   private readonly baseUrl = "https://discord.com/api/v10";
   private readonly token: string;
   private readonly logger: Logger;
-
-  // Throttle: p-throttle ensures max 1 call per 3s, jitter adds 0-4s on top → 3-7s total
-  private readonly throttledFetch: ReturnType<ReturnType<typeof pThrottle>>;
-
-  // Cache — TTL entries auto-expire, Infinity entries use permanentCache
-  private ttlCache = new TTLCache<string, unknown>({ max: 500 });
-  private permanentCache = new Map<string, unknown>();
+  private readonly throttle: Throttle;
+  private readonly cache: Cache;
 
   // Constants
-  private readonly MIN_JITTER_MS = 0;
+  private readonly MIN_INTERVAL_MS = ms("3s");
   private readonly MAX_JITTER_MS = ms("4s");
   private readonly MAX_RETRIES = 2;
 
-  constructor(token: string, logger?: Logger) {
+  constructor(
+    token: string,
+    logger: Logger,
+    throttle: Throttle = defaultThrottle,
+    cache: Cache = defaultCache,
+  ) {
     this.token = token;
-    this.logger = logger ?? new Logger();
-
-    const throttle = pThrottle({ limit: 1, interval: ms("3s") });
-    this.throttledFetch = throttle(async (url: string, init: RequestInit) => {
-      // Add random jitter on top of the 3s base throttle
-      await jitter(this.MIN_JITTER_MS, this.MAX_JITTER_MS);
-      return fetch(url, init);
-    });
+    this.logger = logger;
+    this.throttle = throttle;
+    this.cache = cache;
   }
 
   private parseRateLimitHeaders(headers: Headers): RateLimitHeaders {
@@ -59,21 +47,6 @@ export class DiscordClient {
     };
   }
 
-  private cacheGet(key: string, ttl: number): unknown | undefined {
-    if (ttl === Infinity) {
-      return this.permanentCache.get(key);
-    }
-    return this.ttlCache.get(key);
-  }
-
-  private cacheSet(key: string, data: unknown, ttl: number): void {
-    if (ttl === Infinity) {
-      this.permanentCache.set(key, data);
-    } else {
-      this.ttlCache.set(key, data, { ttl });
-    }
-  }
-
   async request<T = unknown>(
     method: string,
     path: string,
@@ -83,7 +56,7 @@ export class DiscordClient {
 
     // Check cache
     if (options.cacheTtl) {
-      const cached = this.cacheGet(cacheKey, options.cacheTtl);
+      const cached = this.cache.get(cacheKey);
       if (cached !== undefined) {
         this.logger.logRequest({
           ts: new Date().toISOString(),
@@ -105,19 +78,18 @@ export class DiscordClient {
     // Execute with retry
     let lastError: Error | null = null;
     for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
-      const start = Date.now();
+      // Cross-process throttle: waits for shared lock + jitter
+      const waitMs = await this.throttle.wait(this.MIN_INTERVAL_MS, this.MAX_JITTER_MS);
 
-      const response = await this.throttledFetch(
-        `${this.baseUrl}${path}`,
-        {
-          method,
-          headers: {
-            Authorization: this.token,
-            "Content-Type": "application/json",
-            "User-Agent": "discord-mcp/1.0",
-          },
-        }
-      ) as Response;
+      const start = Date.now();
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers: {
+          Authorization: this.token,
+          "Content-Type": "application/json",
+          "User-Agent": "discord-mcp/1.0",
+        },
+      });
 
       const responseText = await response.text();
       const elapsed = Date.now() - start;
@@ -129,7 +101,7 @@ export class DiscordClient {
         endpoint: `${method} ${path}`,
         status: response.status,
         ms: elapsed,
-        delay: elapsed / 1000,
+        delay: waitMs / 1000,
         queue: 0,
         response_size: responseText.length,
         items_count: 0,
@@ -175,10 +147,11 @@ export class DiscordClient {
           ? data.messages.length
           : 1;
       this.logger.logRequest(log);
+      this.logger.logResponse(options.tool, options.params ?? {}, data);
 
       // Cache if requested
       if (options.cacheTtl) {
-        this.cacheSet(cacheKey, data, options.cacheTtl);
+        this.cache.set(cacheKey, data, options.cacheTtl);
       }
 
       return data as T;

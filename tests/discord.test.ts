@@ -1,5 +1,11 @@
-import { describe, it, expect, beforeEach, vi, mock } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, vi, mock } from "bun:test";
 import { DiscordClient } from "../src/discord.js";
+import { Logger } from "../src/logger.js";
+import { Throttle } from "../src/throttle.js";
+import { Cache } from "../src/cache.js";
+import { randomBytes } from "node:crypto";
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -8,10 +14,23 @@ globalThis.fetch = mockFetch as unknown as typeof fetch;
 
 describe("DiscordClient", () => {
   let client: DiscordClient;
+  let tmpDir: string;
+  let throttle: Throttle;
+  let cache: Cache;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-    client = new DiscordClient("test-token");
+    tmpDir = join("/tmp", `discord-test-${randomBytes(8).toString("hex")}`);
+    const logger = await Logger.create();
+    throttle = new Throttle(join(tmpDir, "throttle.db"));
+    cache = new Cache(join(tmpDir, "cache.db"));
+    client = new DiscordClient("test-token", logger, throttle, cache);
+  });
+
+  afterEach(() => {
+    cache.close();
+    throttle.close();
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 
   describe("throttle", () => {
@@ -51,14 +70,14 @@ describe("DiscordClient", () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(3);
 
-      // 3 requests with p-throttle(1/3s) + jitter(0-4s) each:
+      // 3 requests with throttle(3s) + jitter(0-4s) each:
       // minimum total ≈ 0 + 3s + 3s = 6s (first is immediate, 2 intervals)
       expect(elapsed).toBeGreaterThanOrEqual(5900);
     }, 30000);
   });
 
   describe("cache", () => {
-    it("caches responses with permanent TTL", async () => {
+    it("caches responses with TTL", async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         status: 200,
@@ -68,16 +87,16 @@ describe("DiscordClient", () => {
 
       const r1 = await client.request("GET", "/users/@me", {
         tool: "get_me",
-        cacheTtl: Infinity,
+        cacheTtl: 60_000,
       });
       const r2 = await client.request("GET", "/users/@me", {
         tool: "get_me",
-        cacheTtl: Infinity,
+        cacheTtl: 60_000,
       });
 
       expect(mockFetch).toHaveBeenCalledOnce();
       expect(r1).toEqual(r2);
-    });
+    }, 15000);
 
     it("does not cache when cacheTtl is not set", async () => {
       mockFetch.mockResolvedValue({
@@ -95,7 +114,7 @@ describe("DiscordClient", () => {
       });
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
-    }, 15000);
+    }, 30000);
   });
 
   describe("retry on 429", () => {
@@ -142,6 +161,6 @@ describe("DiscordClient", () => {
       await expect(
         client.request("GET", "/users/@me", { tool: "get_me" })
       ).rejects.toThrow("Rate limited");
-    }, 30000);
+    }, 60000);
   });
 });

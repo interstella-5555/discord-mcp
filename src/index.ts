@@ -4,19 +4,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import ms from "ms";
+import { defaultCache } from "./cache.js";
 import { DiscordClient } from "./discord.js";
 import { Logger } from "./logger.js";
-import {
-  formatMessages,
-  formatChannels,
-  formatDMList,
-  formatUser,
-  formatSearchResults,
-  formatPinnedMessages,
-  formatThreadParticipants,
-  formatReactions,
-  formatGuilds,
-} from "./formatters.js";
+import { defaultThrottle } from "./throttle.js";
+import { stripMessages, stripSearchResults, stripDMList, stripUserResponse, stripGuilds } from "./strip.js";
 import type {
   DiscordUser,
   DiscordChannel,
@@ -30,6 +22,21 @@ import type {
   DiscordReactionUser,
 } from "./types.js";
 
+// When true, returns full Discord API JSON without stripping.
+// When false (default), strips responses to reduce token usage (~76% smaller).
+// Stripping removes: user cosmetics (avatar, banner, clan, etc.), empty arrays,
+// null values, redundant fields, and deduplicates nested user objects.
+// Full raw responses are always saved to ~/.discord-mcp/logs/responses/ regardless.
+const RAW_MODE = false;
+
+function json(data: unknown): { content: [{ type: "text"; text: string }] } {
+  return { content: [{ type: "text" as const, text: JSON.stringify(data) }] };
+}
+
+function jsonMessages(data: unknown): { content: [{ type: "text"; text: string }] } {
+  return json(RAW_MODE ? data : stripMessages(data));
+}
+
 // --- Config from env ---
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 
@@ -39,7 +46,7 @@ if (!DISCORD_TOKEN) {
 }
 
 // --- Init ---
-const logger = new Logger();
+const logger = await Logger.create();
 const discord = new DiscordClient(DISCORD_TOKEN, logger);
 
 const server = new McpServer({
@@ -68,11 +75,9 @@ server.registerTool(
   async () => {
     const user = await discord.request<DiscordUser>("GET", "/users/@me", {
       tool: "get_me",
-      cacheTtl: Infinity,
+      cacheTtl: ms("5m"),
     });
-    return {
-      content: [{ type: "text" as const, text: formatUser(user) }],
-    };
+    return json(RAW_MODE ? user : stripUserResponse(user as unknown as Record<string, unknown>));
   }
 );
 
@@ -99,12 +104,10 @@ server.registerTool(
       path,
       {
         tool: "list_guilds",
-        cacheTtl: ms("4h"),
+        cacheTtl: ms("3m"),
       }
     );
-    return {
-      content: [{ type: "text" as const, text: formatGuilds(guilds) }],
-    };
+    return json(RAW_MODE ? guilds : stripGuilds(guilds));
   }
 );
 
@@ -130,12 +133,10 @@ server.registerTool(
       {
         tool: "list_channels",
         params: { guild_id: gid },
-        cacheTtl: Infinity,
+        cacheTtl: ms("5m"),
       }
     );
-    return {
-      content: [{ type: "text" as const, text: formatChannels(channels) }],
-    };
+    return json(channels);
   }
 );
 
@@ -179,13 +180,10 @@ server.registerTool(
       {
         tool: "read_messages",
         params: { channel_id, limit: limit ?? 50, before, after, around },
+        cacheTtl: ms("30s"),
       }
     );
-    return {
-      content: [
-        { type: "text" as const, text: formatMessages(messages) },
-      ],
-    };
+    return jsonMessages(messages);
   }
 );
 
@@ -202,12 +200,10 @@ server.registerTool(
       "/users/@me/channels",
       {
         tool: "list_dms",
-        cacheTtl: ms("5m"),
+        cacheTtl: ms("1m"),
       }
     );
-    return {
-      content: [{ type: "text" as const, text: formatDMList(dms) }],
-    };
+    return json(RAW_MODE ? dms : stripDMList(dms));
   }
 );
 
@@ -268,15 +264,13 @@ server.registerTool(
       {
         tool: "search_messages",
         params: { guild_id: gid, query, author_id, channel_id, has, before, after, in_thread },
+        cacheTtl: ms("1m"),
       }
     );
-    return {
-      content: [
-        { type: "text" as const, text: formatSearchResults(results) },
-      ],
-    };
+    return json(RAW_MODE ? results : stripSearchResults(results as unknown as Record<string, unknown>));
   }
 );
+
 
 server.registerTool(
   "list_threads",
@@ -285,13 +279,17 @@ server.registerTool(
       "List threads in a channel. By default lists active threads; set archived=true for archived threads.",
     inputSchema: z.object({
       channel_id: z.string().describe("Parent channel ID"),
+      guild_id: z
+        .string()
+        .optional()
+        .describe("Guild ID (required for active threads, use list_guilds to find)"),
       archived: z
         .boolean()
         .optional()
         .describe("List archived threads instead of active (default false)"),
     }),
   },
-  async ({ channel_id, archived }) => {
+  async ({ channel_id, guild_id, archived }) => {
     let threads: DiscordThread[];
 
     if (archived) {
@@ -301,41 +299,26 @@ server.registerTool(
         {
           tool: "list_threads",
           params: { channel_id, archived: true },
+          cacheTtl: ms("2m"),
         }
       );
       threads = response.threads;
     } else {
-      const gid = requireGuildId();
+      const gid = requireGuildId(guild_id);
       const response = await discord.request<{ threads: DiscordThread[] }>(
         "GET",
         `/guilds/${gid}/threads/active`,
         {
           tool: "list_threads",
           params: { channel_id, archived: false },
+          cacheTtl: ms("2m"),
         }
       );
       // Filter to only threads from this channel
       threads = response.threads.filter((t) => t.parent_id === channel_id);
     }
 
-    if (threads.length === 0) {
-      return {
-        content: [{ type: "text" as const, text: "No threads found." }],
-      };
-    }
-
-    const lines = threads.map(
-      (t) =>
-        `- "${t.name}" (id: ${t.id}, messages: ${t.message_count}, members: ${t.member_count}${t.archived ? ", archived" : ""})`
-    );
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Threads (${threads.length}):\n${lines.join("\n")}`,
-        },
-      ],
-    };
+    return json(threads);
   }
 );
 
@@ -354,13 +337,10 @@ server.registerTool(
       {
         tool: "list_pinned_messages",
         params: { channel_id },
+        cacheTtl: ms("3m"),
       }
     );
-    return {
-      content: [
-        { type: "text" as const, text: formatPinnedMessages(messages) },
-      ],
-    };
+    return jsonMessages(messages);
   }
 );
 
@@ -378,17 +358,10 @@ server.registerTool(
     }),
   },
   async ({ user_id, guild_id }) => {
-    const user = await discord.request<DiscordUser>(
-      "GET",
-      `/users/${user_id}`,
-      {
-        tool: "get_user_info",
-        params: { user_id },
-      }
-    );
-
-    let member: DiscordGuildMember | undefined;
     const gid = requireGuildId(guild_id);
+
+    // Guild member endpoint works with user tokens; /users/{id} requires bot/OAuth2 scopes
+    let member: DiscordGuildMember | undefined;
     try {
       member = await discord.request<DiscordGuildMember>(
         "GET",
@@ -396,17 +369,29 @@ server.registerTool(
         {
           tool: "get_user_info",
           params: { user_id, guild_id: gid },
+          cacheTtl: ms("5m"),
         }
       );
     } catch {
       // User might not be in this guild
     }
 
-    return {
-      content: [
-        { type: "text" as const, text: formatUser(user, member) },
-      ],
-    };
+    if (member?.user) {
+      const userData = { ...member.user, member };
+      return json(RAW_MODE ? userData : stripUserResponse(userData as unknown as Record<string, unknown>));
+    }
+
+    // Fallback to /users/{id} for users not in the guild
+    const user = await discord.request<DiscordUser>(
+      "GET",
+      `/users/${user_id}`,
+      {
+        tool: "get_user_info",
+        params: { user_id },
+        cacheTtl: ms("5m"),
+      }
+    );
+    return json(RAW_MODE ? user : stripUserResponse(user as unknown as Record<string, unknown>));
   }
 );
 
@@ -425,16 +410,10 @@ server.registerTool(
       {
         tool: "get_thread_participants",
         params: { channel_id },
+        cacheTtl: ms("2m"),
       }
     );
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: formatThreadParticipants(members),
-        },
-      ],
-    };
+    return json(members);
   }
 );
 
@@ -461,13 +440,10 @@ server.registerTool(
       {
         tool: "list_reactions",
         params: { channel_id, message_id, emoji },
+        cacheTtl: ms("1m"),
       }
     );
-    return {
-      content: [
-        { type: "text" as const, text: formatReactions(users, emoji) },
-      ],
-    };
+    return json(users);
   }
 );
 
@@ -477,13 +453,24 @@ async function main() {
   await server.connect(transport);
   console.error("Discord MCP server running on stdio");
 
+  process.stdin.on("end", () => {
+    logger.printStats();
+    defaultCache.close();
+    defaultThrottle.close();
+    process.exit(0);
+  });
+
   process.on("SIGINT", () => {
     logger.printStats();
+    defaultCache.close();
+    defaultThrottle.close();
     process.exit(0);
   });
 
   process.on("SIGTERM", () => {
     logger.printStats();
+    defaultCache.close();
+    defaultThrottle.close();
     process.exit(0);
   });
 }
