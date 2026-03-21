@@ -3,7 +3,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import ms from "ms";
 import { defaultCache } from "./cache.js";
 import { DiscordClient } from "./discord.js";
 import { Logger } from "./logger.js";
@@ -75,7 +74,7 @@ server.registerTool(
   async () => {
     const user = await discord.request<DiscordUser>("GET", "/users/@me", {
       tool: "get_me",
-      cacheTtl: ms("5m"),
+      cacheTtl: 300_000,
     });
     return json(RAW_MODE ? user : stripUserResponse(user as unknown as Record<string, unknown>));
   }
@@ -104,7 +103,7 @@ server.registerTool(
       path,
       {
         tool: "list_guilds",
-        cacheTtl: ms("3m"),
+        cacheTtl: 180_000,
       }
     );
     return json(RAW_MODE ? guilds : stripGuilds(guilds));
@@ -133,7 +132,7 @@ server.registerTool(
       {
         tool: "list_channels",
         params: { guild_id: gid },
-        cacheTtl: ms("5m"),
+        cacheTtl: 300_000,
       }
     );
     return json(channels);
@@ -180,7 +179,7 @@ server.registerTool(
       {
         tool: "read_messages",
         params: { channel_id, limit: limit ?? 50, before, after, around },
-        cacheTtl: ms("30s"),
+        cacheTtl: 30_000,
       }
     );
     return jsonMessages(messages);
@@ -200,7 +199,7 @@ server.registerTool(
       "/users/@me/channels",
       {
         tool: "list_dms",
-        cacheTtl: ms("1m"),
+        cacheTtl: 60_000,
       }
     );
     return json(RAW_MODE ? dms : stripDMList(dms));
@@ -264,7 +263,7 @@ server.registerTool(
       {
         tool: "search_messages",
         params: { guild_id: gid, query, author_id, channel_id, has, before, after, in_thread },
-        cacheTtl: ms("1m"),
+        cacheTtl: 60_000,
       }
     );
     return json(RAW_MODE ? results : stripSearchResults(results as unknown as Record<string, unknown>));
@@ -299,7 +298,7 @@ server.registerTool(
         {
           tool: "list_threads",
           params: { channel_id, archived: true },
-          cacheTtl: ms("2m"),
+          cacheTtl: 120_000,
         }
       );
       threads = response.threads;
@@ -311,7 +310,7 @@ server.registerTool(
         {
           tool: "list_threads",
           params: { channel_id, archived: false },
-          cacheTtl: ms("2m"),
+          cacheTtl: 120_000,
         }
       );
       // Filter to only threads from this channel
@@ -337,7 +336,7 @@ server.registerTool(
       {
         tool: "list_pinned_messages",
         params: { channel_id },
-        cacheTtl: ms("3m"),
+        cacheTtl: 180_000,
       }
     );
     return jsonMessages(messages);
@@ -369,7 +368,7 @@ server.registerTool(
         {
           tool: "get_user_info",
           params: { user_id, guild_id: gid },
-          cacheTtl: ms("5m"),
+          cacheTtl: 300_000,
         }
       );
     } catch {
@@ -388,7 +387,7 @@ server.registerTool(
       {
         tool: "get_user_info",
         params: { user_id },
-        cacheTtl: ms("5m"),
+        cacheTtl: 300_000,
       }
     );
     return json(RAW_MODE ? user : stripUserResponse(user as unknown as Record<string, unknown>));
@@ -410,7 +409,7 @@ server.registerTool(
       {
         tool: "get_thread_participants",
         params: { channel_id },
-        cacheTtl: ms("2m"),
+        cacheTtl: 120_000,
       }
     );
     return json(members);
@@ -440,7 +439,7 @@ server.registerTool(
       {
         tool: "list_reactions",
         params: { channel_id, message_id, emoji },
-        cacheTtl: ms("1m"),
+        cacheTtl: 60_000,
       }
     );
     return json(users);

@@ -1,4 +1,3 @@
-import ms from "ms";
 import { Cache, defaultCache } from "./cache.js";
 import { Logger } from "./logger.js";
 import { defaultThrottle, Throttle } from "./throttle.js";
@@ -19,8 +18,8 @@ export class DiscordClient {
   private readonly cache: Cache;
 
   // Constants
-  private readonly MIN_INTERVAL_MS = ms("3s");
-  private readonly MAX_JITTER_MS = ms("4s");
+  private readonly MIN_INTERVAL_MS = 3_000;
+  private readonly MAX_JITTER_MS = 4_000;
   private readonly MAX_RETRIES = 2;
 
   constructor(
