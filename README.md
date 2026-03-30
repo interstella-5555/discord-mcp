@@ -9,6 +9,7 @@ Requires [Bun](https://bun.sh) runtime and a [Discord user token](#getting-your-
 ### Add to Claude Code
 
 Use **Option A** if you have one Discord account and want it available everywhere.
+
 Use **Option B** if you have multiple accounts or want the token scoped to specific directories.
 
 **Option A: Inline token**
