@@ -12,15 +12,6 @@ Requires [Bun](https://bun.sh) runtime.
 claude mcp add discord -s user -e DISCORD_TOKEN=your_token_here -- bunx --bun github:interstella-5555/discord-mcp
 ```
 
-### From local clone
-
-```bash
-git clone git@github.com:interstella-5555/discord-mcp.git
-cd discord-mcp
-bun install
-claude mcp add discord -s user -e DISCORD_TOKEN=your_token_here -- bun src/index.ts
-```
-
 ### Getting your Discord token
 
 1. Open Discord **in your browser** (not the desktop app)
@@ -49,26 +40,9 @@ claude mcp add discord -s user -e DISCORD_TOKEN=your_token_here -- bun src/index
 | `get_thread_participants` | Thread participant list |
 | `list_reactions` | Who reacted with an emoji |
 
-## Testing with MCP Inspector
-
-The [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) lets you test tools interactively in a browser UI.
-
-```bash
-DISCORD_TOKEN=your_token \
-  bunx --bun @modelcontextprotocol/inspector bun src/index.ts
-```
-
-This opens a browser UI where you can:
-- See all 11 registered tools
-- Call any tool with custom inputs
-- View formatted responses
-- Monitor server logs
-
 ## Logs
 
-All requests are logged as JSON lines to:
-- **stderr** (visible in terminal)
-- **`~/.discord-mcp/logs/YYYY-MM-DD.log`** (persistent, for tuning)
+Logged as JSON lines to **`~/.discord-mcp/logs/YYYY-MM-DD.log`**.
 
 Aggregate stats are printed every 50 requests and on process exit.
 
