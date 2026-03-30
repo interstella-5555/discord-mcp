@@ -8,13 +8,9 @@ Requires [Bun](https://bun.sh) runtime and a [Discord user token](#getting-your-
 
 ### Add to Claude Code
 
-```bash
-claude mcp add discord -s user -- bunx --bun github:interstella-5555/discord-mcp
-```
+Use **Option A** if you have one Discord account and want it available everywhere. Use **Option B** if you have multiple accounts or want the token scoped to specific directories.
 
-Then provide your token in one of two ways:
-
-**Option A: Inline** — single Discord account, all projects. Add `-e` to the command above:
+**Option A: Inline token**
 
 ```bash
 claude mcp add discord -s user -e DISCORD_TOKEN=your_token_here -- bunx --bun github:interstella-5555/discord-mcp
@@ -22,7 +18,11 @@ claude mcp add discord -s user -e DISCORD_TOKEN=your_token_here -- bunx --bun gi
 
 The token is baked into the MCP config, so the server is authorized from every directory.
 
-**Option B: [direnv](https://direnv.net)** — multiple accounts or per-directory tokens:
+**Option B: [direnv](https://direnv.net)**
+
+```bash
+claude mcp add discord -s user -- bunx --bun github:interstella-5555/discord-mcp
+```
 
 Add the token to an `.envrc` in the parent directory of your choice:
 
