@@ -9,35 +9,29 @@ Requires [Bun](https://bun.sh) runtime and a [Discord user token](#getting-your-
 ### Add to Claude Code
 
 ```bash
-claude mcp add discord -s user -e DISCORD_TOKEN=your_token_here -- bunx --bun github:interstella-5555/discord-mcp
-```
-
-Adds the server globally (`-s user`) — use this when you have a single Discord account across all projects.
-
-### Per-directory token with direnv
-
-If you use multiple Discord accounts or only want the token available in specific directories, use [direnv](https://direnv.net) instead of hardcoding the token in the MCP config:
-
-1. Add the server without the `-e` flag:
-
-```bash
 claude mcp add discord -s user -- bunx --bun github:interstella-5555/discord-mcp
 ```
 
-2. Create an `.envrc` in the parent directory where you want the token available:
+Then provide your token in one of two ways:
+
+**Option A: Inline** — single Discord account, all projects. Add `-e` to the command above:
+
+```bash
+claude mcp add discord -s user -e DISCORD_TOKEN=your_token_here -- bunx --bun github:interstella-5555/discord-mcp
+```
+
+**Option B: [direnv](https://direnv.net)** — multiple accounts or per-directory tokens:
 
 ```bash
 # ~/code/.envrc
 export DISCORD_TOKEN=your_token_here
 ```
 
-3. Allow it:
-
 ```bash
 direnv allow ~/code/.envrc
 ```
 
-The server will pick up `DISCORD_TOKEN` from the environment. It will only be set when you're inside `~/code/` (or any subdirectory), so different directories can use different tokens.
+The server picks up `DISCORD_TOKEN` from the environment, so different directories can use different tokens.
 
 ### Getting your Discord token
 
