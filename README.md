@@ -4,7 +4,7 @@ Read-only Discord MCP server for Claude Code. Access channels, messages, threads
 
 ## Setup
 
-Requires [Bun](https://bun.sh) runtime.
+Requires [Bun](https://bun.sh) runtime and a [Discord user token](#getting-your-discord-token).
 
 ### Add to Claude Code
 
