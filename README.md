@@ -43,8 +43,6 @@ The server picks up `DISCORD_TOKEN` from the environment, so different directori
 6. In the **Headers** tab, find `Authorization` — that's your token
 7. Copy the value (it does NOT start with `Bot`)
 
-> **Important:** Never share your token. Anyone with it has full access to your Discord account.
-
 ## Tools
 
 | Tool | Description |
