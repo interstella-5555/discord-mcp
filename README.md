@@ -20,18 +20,23 @@ Then provide your token in one of two ways:
 claude mcp add discord -s user -e DISCORD_TOKEN=your_token_here -- bunx --bun github:interstella-5555/discord-mcp
 ```
 
+The token is baked into the MCP config, so the server is authorized from every directory.
+
 **Option B: [direnv](https://direnv.net)** — multiple accounts or per-directory tokens:
 
+Add the token to an `.envrc` in the parent directory of your choice:
+
 ```bash
-# ~/code/.envrc
-export DISCORD_TOKEN=your_token_here
+echo 'export DISCORD_TOKEN=your_token_here' >> ~/code/.envrc
 ```
+
+Then allow direnv to load it (required after every `.envrc` change):
 
 ```bash
 direnv allow ~/code/.envrc
 ```
 
-The server picks up `DISCORD_TOKEN` from the environment, so different directories can use different tokens.
+The server picks up `DISCORD_TOKEN` from the environment, so different directories can use different tokens. Outside directories with an `.envrc`, the server is registered but not authorized — it won't be used without your knowledge.
 
 ### Getting your Discord token
 
