@@ -52,6 +52,7 @@ function stripMessage(msg: Record<string, unknown>, depth = 0): Record<string, u
   const result: Record<string, unknown> = {
     id: msg.id,
     type: msg.type,
+    channel_id: msg.channel_id,
     author: msg.author ? stripUser(msg.author as Record<string, unknown>) : null,
     content: msg.content,
     timestamp: msg.timestamp,

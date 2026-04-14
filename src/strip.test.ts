@@ -87,10 +87,10 @@ describe("stripMessages", () => {
     expect(author.avatar_decoration_data).toBeUndefined();
   });
 
-  test("drops channel_id, tts, pinned, mention_everyone, position, components", () => {
-    const result = stripMessages([makeMessage()]) as Record<string, unknown>[];
+  test("keeps channel_id; drops tts, pinned, mention_everyone, position, components", () => {
+    const result = stripMessages([makeMessage({ channel_id: "456" })]) as Record<string, unknown>[];
     const msg = result[0];
-    expect(msg.channel_id).toBeUndefined();
+    expect(msg.channel_id).toBe("456");
     expect(msg.tts).toBeUndefined();
     expect(msg.pinned).toBeUndefined();
     expect(msg.mention_everyone).toBeUndefined();
@@ -222,7 +222,6 @@ describe("stripMessages", () => {
     expect(ref.id).toBe("original");
     expect(ref.content).toBe("original msg");
     expect((ref.author as Record<string, unknown>).avatar).toBeUndefined();
-    expect(ref.channel_id).toBeUndefined();
   });
 
   test("caps referenced_message depth at 1 (no nested refs)", () => {
@@ -285,7 +284,6 @@ describe("stripSearchResults", () => {
     expect(result.total_results).toBe(1);
     const groups = result.messages as Record<string, unknown>[][];
     expect(groups[0][0].content).toBe("found it");
-    expect(groups[0][0].channel_id).toBeUndefined();
   });
 });
 
