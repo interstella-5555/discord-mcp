@@ -3,6 +3,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { readFileSync } from "node:fs";
 import { defaultCache } from "./cache.js";
 import { DiscordClient } from "./discord.js";
 import { Logger } from "./logger.js";
@@ -37,10 +38,15 @@ function jsonMessages(data: unknown): { content: [{ type: "text"; text: string }
 }
 
 // --- Config from env ---
-const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
+// Prefer DISCORD_TOKEN_FILE (a path to a file that holds the token): the token is
+// read from disk at startup, so it never appears in argv/`ps` or in the MCP
+// client's server config. Falls back to DISCORD_TOKEN (raw value) for compatibility.
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN_FILE
+  ? readFileSync(process.env.DISCORD_TOKEN_FILE, "utf8").trim()
+  : process.env.DISCORD_TOKEN;
 
 if (!DISCORD_TOKEN) {
-  console.error("DISCORD_TOKEN env var is required");
+  console.error("Set DISCORD_TOKEN_FILE (path to a token file) or DISCORD_TOKEN");
   process.exit(1);
 }
 
