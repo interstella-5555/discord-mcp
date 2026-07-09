@@ -66,6 +66,24 @@ The server picks up `DISCORD_TOKEN` from the environment, so different directori
 | `get_thread_participants` | Thread participant list |
 | `list_reactions` | Who reacted with an emoji |
 
+### Bulk export with `output_to_file`
+
+`read_messages` and `search_messages` accept an optional `output_to_file`
+parameter. When set, the full (stripped) result is written to a file and the tool
+returns only a compact summary — `{path, bytes, count, newest_id, oldest_id}` —
+instead of inlining the whole payload. This lets you export large histories
+without flooding the client's context.
+
+Value forms:
+
+- `true` — write to a default path under the OS temp dir. Override the directory
+  with the `DISCORD_MCP_EXPORT_DIR` environment variable.
+- a filename (e.g. `"export.json"`) — resolved relative to that same directory.
+- an absolute path (e.g. `"/data/export.json"`) — used as-is.
+
+To page through a channel's history, call `read_messages` repeatedly, passing the
+returned `oldest_id` as the next call's `before`.
+
 ## Logs
 
 Logged as JSON lines to **`~/.discord-mcp/logs/YYYY-MM-DD.log`**.

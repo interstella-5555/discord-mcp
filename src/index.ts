@@ -8,6 +8,7 @@ import { DiscordClient } from "./discord.js";
 import { Logger } from "./logger.js";
 import { defaultThrottle } from "./throttle.js";
 import { stripMessages, stripSearchResults, stripDMList, stripUserResponse, stripGuilds } from "./strip.js";
+import { writeResultToFile, snowflakeStamp } from "./output.js";
 import type {
   DiscordUser,
   DiscordChannel,
@@ -35,6 +36,19 @@ function json(data: unknown): { content: [{ type: "text"; text: string }] } {
 function jsonMessages(data: unknown): { content: [{ type: "text"; text: string }] } {
   return json(RAW_MODE ? data : stripMessages(data));
 }
+
+// Reusable schema for the optional file-output param, shared by the read tools
+// whose result size scales with data volume.
+const outputToFileSchema = z
+  .union([z.boolean(), z.string()])
+  .optional()
+  .describe(
+    "If set, write the full result to a file and return only a small summary " +
+      "{path, bytes, count, newest_id, oldest_id} instead of inlining the content. " +
+      "Pass true for a default path under the OS temp dir (override with " +
+      "DISCORD_MCP_EXPORT_DIR), or a filename/absolute path. " +
+      "Use for bulk history export without flooding the client's context."
+  );
 
 // --- Config from env ---
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -164,9 +178,10 @@ server.registerTool(
         .string()
         .optional()
         .describe("Get messages around this message ID (for context)"),
+      output_to_file: outputToFileSchema,
     }),
   },
-  async ({ channel_id, limit, before, after, around }) => {
+  async ({ channel_id, limit, before, after, around, output_to_file }) => {
     const params = new URLSearchParams();
     params.set("limit", String(limit ?? 50));
     if (before) params.set("before", before);
@@ -182,7 +197,13 @@ server.registerTool(
         cacheTtl: 30_000,
       }
     );
-    return jsonMessages(messages);
+    const data = RAW_MODE ? messages : stripMessages(messages);
+    if (output_to_file) {
+      const newest = (data as { id?: string }[])[0]?.id;
+      const name = `${channel_id}_${newest ? snowflakeStamp(newest) : "empty"}`;
+      return json(writeResultToFile(output_to_file, data, name));
+    }
+    return json(data);
   }
 );
 
@@ -244,9 +265,10 @@ server.registerTool(
         .boolean()
         .optional()
         .describe("Only search in threads"),
+      output_to_file: outputToFileSchema,
     }),
   },
-  async ({ guild_id, query, author_id, channel_id, has, before, after, in_thread }) => {
+  async ({ guild_id, query, author_id, channel_id, has, before, after, in_thread, output_to_file }) => {
     const gid = requireGuildId(guild_id);
     const params = new URLSearchParams();
     if (query) params.set("content", query);
@@ -266,7 +288,11 @@ server.registerTool(
         cacheTtl: 60_000,
       }
     );
-    return json(RAW_MODE ? results : stripSearchResults(results as unknown as Record<string, unknown>));
+    const data = RAW_MODE ? results : stripSearchResults(results as unknown as Record<string, unknown>);
+    if (output_to_file) {
+      return json(writeResultToFile(output_to_file, data, `search_${gid}`));
+    }
+    return json(data);
   }
 );
 
