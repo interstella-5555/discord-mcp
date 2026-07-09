@@ -50,6 +50,22 @@ The server picks up `DISCORD_TOKEN` from the environment, so different directori
 6. In the **Headers** tab, find `Authorization` — that's your token
 7. Copy the value (it does NOT start with `Bot`)
 
+### Reading the token from a file (`DISCORD_TOKEN_FILE`)
+
+As a more secure alternative to `DISCORD_TOKEN`, set `DISCORD_TOKEN_FILE` to the
+path of a file that contains the token. The server reads the token from that file
+at startup, so the secret stays out of the process command line (`argv`/`ps`) and
+out of the MCP client's server config. Trailing whitespace/newlines are trimmed.
+
+```bash
+printf '%s' 'your_token_here' > ~/.discord-mcp/token
+chmod 600 ~/.discord-mcp/token
+claude mcp add discord -s user -e DISCORD_TOKEN_FILE=~/.discord-mcp/token -- bunx --bun github:interstella-5555/discord-mcp
+```
+
+If both are set, `DISCORD_TOKEN_FILE` takes precedence; `DISCORD_TOKEN` remains
+supported for compatibility.
+
 ## Tools
 
 | Tool | Description |
